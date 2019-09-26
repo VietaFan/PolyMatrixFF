@@ -3,3 +3,5 @@ gftables/*
 __pycache__/*
 *.exe
 *.o
+output*
+

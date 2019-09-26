@@ -461,12 +461,83 @@ void countAllKthSols3(int d, finfield &F, vector<int> &rcfs, int *invtable, int 
 	}
 }
 
+
+
 int main(int nargs, char **args) {
+	int d=2,q=2;
+	if (nargs > 1) {
+		q = atoi(args[1]);
+	}
+	if (nargs > 2) {
+		d = atoi(args[2]);
+	}
 	loadFields("gftables/gftable", GF, 49);
 	get_ppows(ppow, 50);
-	for (int i=0; i<23; i++) {
-		cout << ppow[i] << " " << countInvKSols2(2, GF[ppow[i]], 2) << endl;
+	int N = m_size(d, GF[q]);
+	
+	//for (int i=0; i<23; i++) {
+	//	cout << ppow[i] << " " << countInvKSols2(2, GF[ppow[i]], 2) << endl;
+	//}
+	
+	int *invtable, *rcftable, *simtable;
+	vector<int> rcfs, rcftypes;
+	init_tables(d, GF[q], &invtable, &rcftable, &simtable, rcfs, rcftypes);
+	
+	unordered_map<int,int> rcfcts;
+	for (int i=0; i<N; i++) {
+		rcfcts[rcfs[rcftable[i]]]++;
 	}
+	
+	matrix R;
+	for (int rcf: rcfs) {
+		nthmat(rcf, d, R, GF[q]);
+		printMat(R, GF[q]);
+		cout << "count: " << rcfcts[rcf] << endl;
+	}
+	
+	/*matrix M;
+	for (int rcf: rcfs) {
+		nthmat(rcf, d, M, GF[q]);
+		printMat(M, GF[q]);
+		cout << endl;
+	}
+	*/
+	matrix X, Y, X2, ainvX2, Y2, diff, XY, YX;
+	cout << "d = " << d << ", q = " << q << endl;
+
+	for (int a=1; a<q; a++) {
+		cout << "a = " << GF[q].reps[a] << endl;
+		for (int rcf: rcfs) {
+			nthmat(rcf, d, X, GF[q]);
+			
+			mul(X, X, X2, GF[q]);
+			scmul(GF[q].inv[a], X2, ainvX2, GF[q]);
+			// ainvX2 = a^(-1)X^2
+			
+			int nsols = 0, ncsols = 0;
+			for (int yidx=0; yidx<N; yidx++) {
+				nthmat(yidx, d, Y, GF[q]);
+				mul(Y, Y, Y2, GF[q]);
+				sub(ainvX2, Y2, diff, GF[q]);
+				if (iszero(diff)) {
+					nsols++;
+					mul(X, Y, XY, GF[q]);
+					mul(Y, X, YX, GF[q]);
+					sub(XY, YX, diff, GF[q]);
+					if (iszero(diff)) ncsols++;
+				}
+			}
+			
+			if (nsols > ncsols) {			
+				cout << "X = \n";
+				printMat(X, GF[q]);
+				
+				cout << "# solutions Y: " << nsols << endl;
+				cout << "# commuting solutions Y: " << ncsols << endl;
+			}
+		}
+	}
+	
 	/*matrix M;
 	nthmat(34371865, 3, M, GF[8]);
 	cout << "M = \n";

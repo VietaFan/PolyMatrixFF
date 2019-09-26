@@ -9,6 +9,17 @@
 #include "finfield.h"
 using namespace std;
 
+ostream& operator<<(ostream &out, vector<int, allocator<int> > &vec) {
+	out << "[";
+	if (vec.size() > 0) {		
+		for (int i=0; i<vec.size()-1; ++i)
+			out << vec[i] << ", ";
+		out << vec[vec.size()-1];
+	}
+	out << "]";
+	return out;
+}
+
 ostream& operator<<(ostream &out, vector<uint64_t> &vec) {
 	out << "[";
 	if (vec.size() > 0) {		
@@ -20,8 +31,8 @@ ostream& operator<<(ostream &out, vector<uint64_t> &vec) {
 	return out;
 }
 
-template<class T>
-ostream& operator<<(ostream &out, vector<T> &vec) {
+template<typename T, typename Alloc>
+ostream& operator<<(ostream &out, vector<T, Alloc> &vec) {
 	out << "[";
 	if (vec.size() > 0) {		
 		for (int i=0; i<vec.size()-1; ++i)
@@ -145,12 +156,65 @@ void mul(matrix &A, matrix &B, matrix &result, finfield &F) {
 		}
 }
 
+// assumes u and v are vectors of dimension d, and A is a dxd matrix
+void add(vect &u, vect &v, vect &result, finfield &F) {
+	result.d = u.d;
+	for (int i=0; i<u.d; i++)
+		result.vals[i] = F.add[u.vals[i]][v.vals[i]];
+}
+
+void sub(vect &u, vect &v, vect &result, finfield &F) {
+	result.d = u.d;
+	for (int i=0; i<u.d; i++)
+		result.vals[i] = F.sub[u.vals[i]][v.vals[i]];
+}
+
+void mul(matrix &A, vect &v, vect &result, finfield &F) {
+	result.d = v.d;
+	int accum;
+	for (int i=0; i<v.d; i++) {
+		accum = 0;
+		for (int j=0; j<v.d; j++)
+			accum = F.add[accum][F.mul[A.mat[i][j]][v.vals[j]]];
+		result.vals[i] = accum;
+	}
+}
+
+// k is an element of the finite field F
+void scmul(int k, vect &v, vect &result, finfield &F) {
+	result.d = v.d;
+	for (int i=0; i<v.d; i++) {
+		result.vals[i] = F.mul[k][v.vals[i]];
+	}
+}
+
 void copy(matrix &M, matrix &result) {
 	result.d = M.d;
 	for (int i=0; i<M.d; i++) {
 		for (int j=0; j<M.d; j++) {
 			result.mat[i][j] = M.mat[i][j];
 		}
+	}
+}
+
+void zeros(vect &v, int d) {
+	v.d = d;
+	for (int i=0; i<d; i++) {
+		v.vals[i] = 0;
+	}
+}
+
+bool iszero(vect &v) {
+	for (int i=0; i<v.d; i++) {
+		if (v.vals[i]) return false;
+	}
+	return true;
+}
+
+void copy(vect &v, vect &result) {
+	result.d = v.d;
+	for (int i=0; i<v.d; i++) {
+		result.vals[i] = v.vals[i];
 	}
 }
 
@@ -189,22 +253,35 @@ void printMat(matrix &M, finfield &F) {
 	}
 }
 
-int m_size(int d, finfield &F) {
-	int nmats = 1;
+uint64_t m_size(int d, finfield &F) {
+	uint64_t nmats = 1;
 	for (int i=0; i<d*d; i++)
 		nmats *= F.q;
 	return nmats;
 }
 
-int gl_size(int d, finfield &F) {
-	int qn = 1;
+uint64_t gl_size(int d, finfield &F) {
+	uint64_t qn = 1;
 	for (int i=0; i<d; i++)
 		qn *= F.q;
-	int gl_size = 1;
-	int subt = 1;
+	uint64_t gl_size = 1;
+	uint64_t subt = 1;
 	for (int i=0; i<d; i++) {
 		gl_size *= (qn-subt);
 		subt *= F.q;
+	}
+	return gl_size;
+}
+
+uint64_t gl_size(int d, int q) {
+	uint64_t qn = 1;
+	for (int i=0; i<d; i++)
+		qn *= q;
+	uint64_t gl_size = 1;
+	uint64_t subt = 1;
+	for (int i=0; i<d; i++) {
+		gl_size *= (qn-subt);
+		subt *= q;
 	}
 	return gl_size;
 }
@@ -230,11 +307,38 @@ uint64_t matindex(matrix &M, finfield &F) {
 	return n;
 }
 
+void nthvec(uint64_t n, int d, vect &v, finfield &F) {
+	v.d = d;
+	for (int i=0; i<d; i++) {
+		v.vals[i] = n % F.q;
+		n /= F.q;
+	}
+}
+
+uint64_t vecindex(vect &v, finfield &F) {
+	uint64_t n=0, mult=1;
+	for (int i=0; i<v.d; i++) {
+		n += mult*v.vals[i];
+		mult *= F.q;
+	}
+	return n;
+}
+
 bool iszero(matrix &M) {
 	for (int i=0; i<M.d; i++) 
 		for (int j=0; j<M.d; j++)
 			if (M.mat[i][j]) return false;
 	return true;
+}
+
+// a really suboptimal way of getting the divisors of |GL_q(Fq)|
+void get_kvals(int q, vector<int> &ks) {
+	int gls = gl_size(2,q);
+	for (int k=1; k<=gls; k++) {
+		if (gls%k == 0) {
+			ks.push_back(k);
+		}
+	}
 }
 
 // from https://rosettacode.org/wiki/Reduced_row_echelon_form#C.2B.2B
@@ -348,6 +452,12 @@ void get_ppows(int *ppow, int maxq) {
 			pos++;
 		}
 	}
+}
+
+void loadField(string fpath, int q, finfield &F) {
+	ostringstream oss;
+	oss << fpath << q << ".txt";
+	readField(oss.str(), F);
 }
 
 void loadFields(string fpath, finfield *GF, int maxq) {

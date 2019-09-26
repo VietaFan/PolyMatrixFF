@@ -3,6 +3,7 @@
 #include <fstream>
 #include <sstream>
 #include <unordered_map>
+#include <map>
 #include <unordered_set>
 #include <vector>
 #include <algorithm>
@@ -181,10 +182,167 @@ ostream& operator<<(ostream &out, vector<cnum> &vec) {
 	return out;
 }
 
+template<typename T1, typename T2>
+ostream& operator<<(ostream &out, map<T1, T2> &dict) {
+	out << "{";
+	int k = dict.size();
+	for (auto it=dict.begin(); it!=dict.end(); ++it) {
+		out << (it->first) << ": " << (it->second);
+		if (k > 1) {
+			out << ", ";
+		}
+		--k;
+	}
+	out << "}";
+	return out;
+}
+
+template<typename T>
+ostream& operator<<(ostream &out, vector<T, allocator<T>> &vec) {
+	out << "[";
+	if (vec.size() > 0) {		
+		for (int i=0; i<vec.size()-1; ++i)
+			out << vec[i] << ", ";
+		out << vec[vec.size()-1];
+	}
+	out << "]";
+	return out;
+}
+
+template<typename T>
+ostream& operator<<(ostream &out, const vector<T, allocator<T>> &vec) {
+	out << "[";
+	if (vec.size() > 0) {		
+		for (int i=0; i<vec.size()-1; ++i)
+			out << vec[i] << ", ";
+		out << vec[vec.size()-1];
+	}
+	out << "]";
+	return out;
+}
+
+void check_conj2(vector<uint64_t> &kvals, vector<vector<int> > &coeffs, bool verbose) {
+	int nchars = coeffs[0].size();
+	map<int, vector<int> > cutoffs;
+	for (int i=0; i<nchars; i++) {
+		vector<int> v;
+		int ctr;
+		for (int j=0; j<kvals.size(); j++) {
+			if (coeffs[j][i] == -1) {
+				continue;
+			}
+			ctr = 0;
+			for (int d: v) {
+				if (kvals[j]%d == 0) {
+					ctr++;
+				}
+			}
+			if (ctr > coeffs[j][i]) {
+				v.push_back(-1);
+				break;
+			}
+			else {
+				while (coeffs[j][i] > ctr) {
+					v.push_back(kvals[j]);
+					ctr++;
+				}
+			}
+		}
+		cutoffs[i+1] = v;
+	}
+	map<vector<int>, vector<int> > cutoffs2;
+	for (auto it=cutoffs.begin(); it!=cutoffs.end(); ++it) {
+		if (!cutoffs2.count(it->second)) {
+			cutoffs2[it->second] = vector<int>();
+		}
+		cutoffs2[it->second].push_back(it->first);
+	}
+	
+	if (verbose) {
+		cout << cutoffs2 << endl;
+	}
+}
+
+void run_sim(int q, bool verbose) {
+	finfield GFq,GFq2;
+	cout << "q = " << q << "\n------\n";
+	loadFieldPair("gftables/gftable", q, GFq, GFq2);
+	vector<matrix> reprs;
+	vector<gl2q_class> classes;
+	get_classes(q, classes);
+	for (int i=0; i<classes.size(); i++) {
+		matrix M;
+		get_representative(classes[i], M, GFq, GFq2);
+		reprs.push_back(M);
+	}
+	vector<uint64_t> clsizes;
+	get_class_sizes(q, clsizes);
+	vector<uint64_t> kvals;
+	get_kseries(GFq, kvals);
+	vector<vector<cnum> > irrep_chars;
+	get_irrep_chars(q, irrep_chars);
+	
+	vector<cnum> components;
+	vector<uint64_t> chars, non_chars;
+	vector<vector<int> > coeffs; 
+	for (int k: kvals) {
+		if (decompose_kr2(k, GFq, reprs, irrep_chars, components)) {
+			chars.push_back(k);
+			//cout << k << ": " << components << endl;
+		} else {
+			non_chars.push_back(k);
+			//cout << k << ": not a character\n";
+		}
+		if (verbose)
+			cout << k << ":" << (k == chars[chars.size()-1] ? "y" : "n") << "\t [ ";
+		coeffs.push_back(vector<int>());
+		for (cnum z: components) {
+			if (fabs(z.im) > 1e-12 || fabs(z.re-round(z.re)) > 1e-12 || z.re < -1e-12) {
+				coeffs[coeffs.size()-1].push_back(-1);
+				if (verbose)
+					cout << "X ";
+			} else {
+				coeffs[coeffs.size()-1].push_back((int)(z.re+1e-11));
+				if (verbose)
+					cout << z << " ";
+			}
+		}
+		if (verbose)
+			cout << "]\n";			
+	}
+	check_conj2(kvals, coeffs, true);
+	if (verbose) {
+		cout << "computing with inner product...\n";
+		cout << "the # of kth roots is a character for gcd(k,|GL_2(F_" << q << ")|) in " << chars << endl;
+		vector<uint64_t> v;
+		for (int k: chars) {
+			v.push_back(k%((q+1)/2));
+		}
+		cout << v << endl;
+		cout << "it is not a character for gcd(k, |GL_2(F_" << q << ")|) in " << non_chars << endl;
+		v.clear();
+		for (int k: non_chars) {
+			v.push_back(k%((q+1)/2));
+		}
+		cout << v << endl;
+	}
+	for (int k: non_chars) {
+		if (k%((q+1)/2) == 0) {
+			cout << "conjecture fails: counterexample: k = " << k << " is not a character.\n";
+		}
+	}
+}
+
 int main(int argn, char **argv) {
 	//loadFields("gftables/gftable", GF, 289);
 	//get_ppows(ppow, 289);
-	int qvals[] = {2,3,5,7,9};
+	run_sim(3, false);
+	run_sim(5, false);
+	run_sim(7, false);
+	run_sim(9, false);
+	run_sim(11, false);
+	run_sim(13, false);
+	/*int qvals[] = {2,3,5,7,9};
 	finfield GFq,GFq2;
 	for (int q: qvals) {
 		cout << "q = " << q << "\n------\n";
